@@ -1,0 +1,22 @@
+﻿# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Operating System & IDE files
+.vscode/
+.idea/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+
+# Logs & crash dumps
+*.log
