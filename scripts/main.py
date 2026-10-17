@@ -70,6 +70,7 @@ _apply_engine_optimizations()
 application.asset_folder = PROJECT_ROOT
 
 import config
+from textures_gen import ensure_textures_exist
 from audio_manager import AudioManager
 from snake import Snake
 from items import ItemManager
@@ -80,7 +81,8 @@ from save_manager import load_save_data, save_game_data
 
 class GameController:
     def __init__(self):
-        # Audio & Systems
+        # Ensure HD textures & sounds exist
+        ensure_textures_exist()
         self.audio = AudioManager()
         self.level_mgr = LevelManager()
         self.item_mgr = ItemManager()
@@ -327,6 +329,14 @@ class GameController:
         dt = time.dt
         if dt > 0.1:
             dt = 0.1
+
+        if self.state == "MENU":
+            self.level_mgr.update_dynamic_hazards(dt)
+            self.camera_yaw = (self.camera_yaw + dt * 7.5) % 360.0
+            rad = math.radians(self.camera_yaw)
+            camera.position = Vec3(-math.sin(rad) * 42.0, 36.0, -math.cos(rad) * 42.0)
+            camera.rotation = (41.0, self.camera_yaw, 0.0)
+            return
 
         if self.state != "PLAYING":
             return

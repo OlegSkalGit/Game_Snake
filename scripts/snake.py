@@ -1,11 +1,22 @@
 """
 Snake Entity and Physics for 3D Snake.
-Handles continuous steering, smooth spline/trail body following, detailed reptilian textures,
-power-up states, and tail-biting / severance mechanics.
+Handles continuous steering, smooth spline/trail body following, detailed 3D sculpted reptilian anatomy,
+dorsal spine ridges, forked tongue, power-up states, and tail-biting / severance mechanics.
 """
 import math
 from ursina import Entity, Vec3, color, time, destroy, lerp
+from ursina.models.procedural.cone import Cone
 import config
+
+
+def _destroy_with_children(ent):
+    if not ent:
+        return
+    if hasattr(ent, 'children'):
+        for ch in list(ent.children):
+            _destroy_with_children(ch)
+    destroy(ent)
+
 
 class Snake:
     def __init__(self, start_pos=Vec3(0, 0.45, 0), start_rot_y=0.0):
@@ -41,62 +52,99 @@ class Snake:
         self.build_initial_body()
         
     def build_head(self, start_pos, start_rot_y):
-        """Constructs the 3D Snake Head with detailed features and scales texture."""
+        """Constructs the sculpted 3D Reptilian Head with snout, brow ridges, horns, glossy eyes, and forked tongue."""
         self.head = Entity(
             model='sphere',
             texture='textures/snake_scales.png',
-            color=color.rgb32(230, 255, 230),
-            scale=(config.HEAD_RADIUS * 1.9, config.HEAD_RADIUS * 1.5, config.HEAD_RADIUS * 2.3),
+            color=color.rgb32(225, 255, 230),
+            scale=(config.HEAD_RADIUS * 1.95, config.HEAD_RADIUS * 1.52, config.HEAD_RADIUS * 2.35),
             position=start_pos,
             rotation=(0, start_rot_y, 0)
         )
         
-        # Eye Left
+        # Tapered Forward Snout & Jaw
+        self.snout = Entity(
+            parent=self.head,
+            model='sphere',
+            texture='textures/snake_scales.png',
+            color=color.rgb32(210, 250, 215),
+            scale=(0.68, 0.58, 0.65),
+            position=(0, -0.05, 0.34)
+        )
+        # Nostrils
+        Entity(parent=self.snout, model='sphere', color=color.rgb32(15, 35, 20), scale=(0.14, 0.12, 0.14), position=(-0.24, 0.25, 0.38))
+        Entity(parent=self.snout, model='sphere', color=color.rgb32(15, 35, 20), scale=(0.14, 0.12, 0.14), position=(0.24, 0.25, 0.38))
+
+        # Supraorbital Brow Ridges
+        Entity(parent=self.head, model='cube', color=color.rgb32(35, 165, 75), scale=(0.22, 0.10, 0.34), position=(-0.33, 0.42, 0.22), rotation=(8, -12, -16))
+        Entity(parent=self.head, model='cube', color=color.rgb32(35, 165, 75), scale=(0.22, 0.10, 0.34), position=(0.33, 0.42, 0.22), rotation=(8, 12, 16))
+
+        # Sleek Swept-Back Emerald-Gold Head Horns / Crown Crest
+        Entity(parent=self.head, model=Cone(resolution=8), color=color.rgb32(180, 245, 110), scale=(0.18, 0.52, 0.18), position=(-0.26, 0.40, -0.25), rotation=(-52, -14, 0))
+        Entity(parent=self.head, model=Cone(resolution=8), color=color.rgb32(180, 245, 110), scale=(0.18, 0.52, 0.18), position=(0.26, 0.40, -0.25), rotation=(-52, 14, 0))
+        
+        # Eye Left (Iris + Slit Pupil + Glossy Catchlight)
         self.eye_l = Entity(
             parent=self.head,
             model='sphere',
-            color=config.COLOR_SNAKE_EYES,
+            color=color.rgb32(255, 245, 150),
             scale=(0.28, 0.28, 0.28),
-            position=(-0.35, 0.32, 0.25)
+            position=(-0.35, 0.30, 0.24)
         )
         self.pupil_l = Entity(
             parent=self.eye_l,
             model='sphere',
             color=config.COLOR_SNAKE_PUPILS,
-            scale=(0.55, 0.55, 0.55),
-            position=(0, 0, 0.35)
+            scale=(0.32, 0.72, 0.50),
+            position=(-0.05, 0, 0.36)
+        )
+        Entity(
+            parent=self.eye_l,
+            model='sphere',
+            color=color.white,
+            scale=(0.22, 0.22, 0.22),
+            position=(-0.18, 0.24, 0.42)
         )
         
-        # Eye Right
+        # Eye Right (Iris + Slit Pupil + Glossy Catchlight)
         self.eye_r = Entity(
             parent=self.head,
             model='sphere',
-            color=config.COLOR_SNAKE_EYES,
+            color=color.rgb32(255, 245, 150),
             scale=(0.28, 0.28, 0.28),
-            position=(0.35, 0.32, 0.25)
+            position=(0.35, 0.30, 0.24)
         )
         self.pupil_r = Entity(
             parent=self.eye_r,
             model='sphere',
             color=config.COLOR_SNAKE_PUPILS,
-            scale=(0.55, 0.55, 0.55),
-            position=(0, 0, 0.35)
+            scale=(0.32, 0.72, 0.50),
+            position=(0.05, 0, 0.36)
+        )
+        Entity(
+            parent=self.eye_r,
+            model='sphere',
+            color=color.white,
+            scale=(0.22, 0.22, 0.22),
+            position=(0.18, 0.24, 0.42)
         )
         
-        # Flickering Tongue
+        # Forked Flickering Tongue
         self.tongue = Entity(
             parent=self.head,
             model='cube',
             color=config.COLOR_SNAKE_TONGUE,
-            scale=(0.14, 0.03, 0.5),
-            position=(0, -0.05, 0.52)
+            scale=(0.09, 0.025, 0.46),
+            position=(0, -0.08, 0.56)
         )
+        Entity(parent=self.tongue, model='cube', color=config.COLOR_SNAKE_TONGUE, scale=(0.45, 0.9, 0.38), position=(-0.38, 0, 0.52), rotation=(0, -28, 0))
+        Entity(parent=self.tongue, model='cube', color=config.COLOR_SNAKE_TONGUE, scale=(0.45, 0.9, 0.38), position=(0.38, 0, 0.52), rotation=(0, 28, 0))
         
         # Shield Aura (Hidden until active)
         self.shield_aura = Entity(
             parent=self.head,
             model='sphere',
-            color=color.rgba32(0, 200, 255, 100),
+            color=color.rgba32(0, 210, 255, 105),
             scale=(2.4, 2.4, 2.4),
             visible=False
         )
@@ -134,7 +182,7 @@ class Snake:
             self.add_segment()
 
     def add_segment(self):
-        """Instantiates a new 3D body segment with detailed scales texture and gradient."""
+        """Instantiates a new 3D body segment with detailed scales texture, gradient, and dorsal spine ridge."""
         idx = len(self.segments)
         
         # Color gradient
@@ -152,6 +200,16 @@ class Snake:
             scale=config.SEGMENT_RADIUS * 2.0,
             position=init_pos,
             rotation=(0, init_rot_y, init_rot_z * 0.7)
+        )
+        # Sculpted Dorsal Spine Scale / Fin along the back
+        ridge_col = color.rgb32(145, 245, 115) if idx % 2 == 0 else color.rgb32(75, 215, 110)
+        Entity(
+            parent=seg,
+            model=Cone(resolution=6),
+            color=ridge_col,
+            scale=(0.22, 0.34, 0.38),
+            position=(0, 0.44, 0),
+            rotation=(-22, 0, 0)
         )
         self.segments.append(seg)
         self.update_segment_scales()
@@ -190,7 +248,7 @@ class Snake:
         severed_positions = []
         for seg in severed:
             severed_positions.append(Vec3(seg.position))
-            destroy(seg)
+            _destroy_with_children(seg)
 
         self.update_segment_scales()
         return severed_positions
@@ -263,7 +321,7 @@ class Snake:
         # Flickering tongue animation
         tongue_flick = 0.5 + 0.35 * math.sin(self.elapsed_time * 12.0)
         if tongue_flick > 0.65:
-            self.tongue.scale_z = 0.5 + (tongue_flick - 0.65) * 1.5
+            self.tongue.scale_z = 0.45 + (tongue_flick - 0.65) * 1.4
             self.tongue.visible = True
         else:
             self.tongue.visible = False
@@ -393,11 +451,8 @@ class Snake:
     def destroy_entities(self):
         """Cleans up all Ursina entities associated with this Snake."""
         for seg in self.segments:
-            destroy(seg)
+            _destroy_with_children(seg)
         self.segments.clear()
         if self.head:
-            if hasattr(self.head, 'children'):
-                for child in list(self.head.children):
-                    destroy(child)
-            destroy(self.head)
+            _destroy_with_children(self.head)
             self.head = None

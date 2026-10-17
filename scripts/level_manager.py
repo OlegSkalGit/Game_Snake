@@ -1,14 +1,15 @@
 """
 Level Manager and 3D Environment Builder for 3D Snake Adventure.
-Constructs 18 rich themed arenas with high-detail 3D models, procedural textures,
-animated dynamic hazards, lighting, and collision resolution.
+Constructs 18 rich themed arenas with HD 512x512 procedural textures, multi-light sculptural shading,
+atmospheric horizon vistas, animated landmarks, dynamic hazards, and collision resolution.
 """
 import math
 import random
-from ursina import Entity, Vec3, color, destroy, window, DirectionalLight, AmbientLight
+from ursina import Entity, Vec3, color, destroy, window, scene, DirectionalLight, AmbientLight
 from ursina.models.procedural.cylinder import Cylinder
 from ursina.models.procedural.cone import Cone
 import config
+
 
 def safe_destroy_entity(entity):
     """Recursively destroys entity and all its children to prevent memory leaks and Z-fighting."""
@@ -21,7 +22,7 @@ def safe_destroy_entity(entity):
 
 
 class MovingLaserBarrier:
-    """Animated laser hazard that glides back and forth."""
+    """Animated laser hazard that glides back and forth with glowing emitters."""
     def __init__(self, start_pos, end_pos, move_speed=2.5, beam_color=None):
         self.start_pos = Vec3(start_pos)
         self.end_pos = Vec3(end_pos)
@@ -38,9 +39,10 @@ class MovingLaserBarrier:
             scale=(2.6, 0.35, 0.35),
             position=start_pos
         )
-        self.emitter_l = Entity(parent=self.entity, model=Cylinder(resolution=10), color=color.rgb32(40, 45, 55), scale=(0.35, 1.4, 0.35), position=(-0.5, 0, 0), rotation=(0, 0, 90))
-        self.emitter_r = Entity(parent=self.entity, model=Cylinder(resolution=10), color=color.rgb32(40, 45, 55), scale=(0.35, 1.4, 0.35), position=(0.5, 0, 0), rotation=(0, 0, 90))
-        self.core_beam = Entity(parent=self.entity, model='cube', color=color.white, scale=(0.95, 0.4, 0.4))
+        self.emitter_l = Entity(parent=self.entity, model=Cylinder(resolution=12), color=color.rgb32(45, 50, 62), scale=(0.38, 1.45, 0.38), position=(-0.5, 0, 0), rotation=(0, 0, 90))
+        self.emitter_r = Entity(parent=self.entity, model=Cylinder(resolution=12), color=color.rgb32(45, 50, 62), scale=(0.38, 1.45, 0.38), position=(0.5, 0, 0), rotation=(0, 0, 90))
+        self.core_beam = Entity(parent=self.entity, model='cube', color=color.white, scale=(0.96, 0.42, 0.42))
+        self.ring_c = Entity(parent=self.entity, model='cube', color=beam_col, scale=(0.18, 1.65, 1.65), rotation=(45, 0, 0))
 
     @property
     def position(self):
@@ -63,13 +65,14 @@ class MovingLaserBarrier:
             self.start_pos.z * (1 - t) + self.end_pos.z * t
         )
         self.entity.rotation_y += dt * 45.0
+        self.ring_c.rotation_x += dt * 160.0
 
     def destroy(self):
         safe_destroy_entity(self.entity)
 
 
 class RotatingGear:
-    """Rotating industrial, cosmic or steampunk cogwheel."""
+    """Rotating industrial, cosmic or steampunk cogwheel with 8 beveled teeth and glowing hub."""
     def __init__(self, pos, rot_speed=65.0, col=None, radius=1.6):
         self.pos = Vec3(pos)
         self.rot_speed = rot_speed
@@ -78,22 +81,23 @@ class RotatingGear:
         
         gear_col = col or color.rgb32(220, 140, 20)
         self.entity = Entity(
-            model=Cylinder(resolution=14),
+            model=Cylinder(resolution=16),
             color=gear_col,
-            scale=(radius * 2.0, 0.6, radius * 2.0),
+            scale=(radius * 2.0, 0.62, radius * 2.0),
             position=pos
         )
-        # Center hub
-        self.hub = Entity(parent=self.entity, model=Cylinder(resolution=12), color=color.tint(gear_col, -0.3), scale=(0.45, 1.4, 0.45), position=(0, 0, 0))
-        # 6 Gear teeth
-        for i in range(6):
-            ang = i * (360.0 / 6.0)
+        # Center hub & glowing core
+        self.hub = Entity(parent=self.entity, model=Cylinder(resolution=12), color=color.tint(gear_col, -0.3), scale=(0.48, 1.45, 0.48), position=(0, 0, 0))
+        Entity(parent=self.entity, model='sphere', color=color.tint(gear_col, 0.35), scale=(0.28, 1.75, 0.28), position=(0, 0.2, 0))
+        # 8 Gear teeth
+        for i in range(8):
+            ang = i * (360.0 / 8.0)
             rad = math.radians(ang)
             Entity(
                 parent=self.entity,
                 model='cube',
                 color=color.tint(gear_col, -0.15),
-                scale=(0.26, 1.1, 0.26),
+                scale=(0.24, 1.12, 0.24),
                 position=(math.sin(rad) * 0.52, 0, math.cos(rad) * 0.52),
                 rotation=(0, ang, 0)
             )
@@ -128,6 +132,7 @@ class LevelManager:
         self.obstacles = []
         self.decorations = []
         self.dynamic_hazards = []
+        self.animated_spinners = []
         self.lights = []
 
     @property
@@ -151,6 +156,8 @@ class LevelManager:
 
     def clear(self):
         """Destroys all active entities in the level cleanly."""
+        self.animated_spinners.clear()
+
         if self.floor:
             safe_destroy_entity(self.floor)
             self.floor = None
@@ -176,7 +183,7 @@ class LevelManager:
         self.lights.clear()
 
     def build_level(self, level_index, sublevel_index=0):
-        """Constructs the 3D level world and specific sublevel."""
+        """Constructs the 3D level world, atmospheric lighting, perimeter architecture, and biome obstacles."""
         self.clear()
         self.current_level_idx = max(0, min(level_index, len(config.LEVELS_DATA) - 1))
         self.current_sublevel_idx = max(0, min(sublevel_index, 4))
@@ -185,16 +192,20 @@ class LevelManager:
         self.arena_size = lvl["arena_size"]
         width, height = self.arena_size
         
-        # Background color
+        # Background & Atmospheric Horizon Fog
         window.color = lvl["bg_color"]
+        scene.fog_color = lvl["bg_color"]
+        scene.fog_density = (75.0, 260.0)
 
-        # Dynamic lighting
-        self.dir_light = DirectionalLight(y=18, z=-12, x=8, shadows=False)
+        # Multi-Light Sculptural Setup (Key Light + Rim Light + Ambient Light)
+        self.dir_light = DirectionalLight(y=22, z=-14, x=10, shadows=False)
         self.dir_light.look_at(Vec3(0, 0, 0))
+        self.rim_light = DirectionalLight(y=14, z=16, x=-12, color=color.rgb32(95, 105, 125), shadows=False)
+        self.rim_light.look_at(Vec3(0, 0, 0))
         self.amb_light = AmbientLight(color=lvl["ambient_light"])
-        self.lights.extend([self.dir_light, self.amb_light])
+        self.lights.extend([self.dir_light, self.rim_light, self.amb_light])
 
-        # Textured Floor
+        # Textured HD Floor
         tex_path = lvl.get("ground_texture", None)
         self.floor = Entity(
             model='plane',
@@ -206,10 +217,21 @@ class LevelManager:
         if hasattr(self.floor, 'texture_scale'):
             self.floor.texture_scale = (width / 8.0, height / 8.0)
 
+        # Monumental Sub-Floor Citadel Plinth
+        wall_col = lvl["wall_color"]
+        grid_col = lvl.get("grid_color", color.tint(wall_col, 0.35))
+        plinth = Entity(
+            model='cube',
+            texture='textures/stone_brick.png',
+            color=color.tint(wall_col, -0.35),
+            scale=(width + 3.4, 3.0, height + 3.4),
+            position=(0, -1.55, 0)
+        )
+        self.decorations.append(plinth)
+
         # Boundary Walls (North, South, East, West)
         wall_thick = 1.4
         wall_h = 2.8
-        wall_col = lvl["wall_color"]
         hw = width / 2.0
         hh = height / 2.0
 
@@ -219,16 +241,31 @@ class LevelManager:
         w_west = Entity(model='cube', texture='textures/stone_brick.png', color=wall_col, scale=(wall_thick, wall_h, height), position=(-hw - wall_thick / 2.0, wall_h / 2.0, 0))
         self.walls.extend([w_north, w_south, w_east, w_west])
 
-        # Wall Top Glowing Rail
+        # Wall Top Glowing Energy Rail
         rail_col = color.tint(wall_col, 0.35)
         for w in [w_north, w_south, w_east, w_west]:
-            rail = Entity(model='cube', color=rail_col, scale=(w.scale_x, 0.35, w.scale_z), position=(w.x, wall_h + 0.18, w.z))
+            rail = Entity(model='cube', color=rail_col, scale=(w.scale_x, 0.36, w.scale_z * 0.85 if w.scale_x > w.scale_z else w.scale_z), position=(w.x, wall_h + 0.18, w.z))
             self.decorations.append(rail)
 
-        # Corner Tower Pillars
+        # Perimeter Wall Battlement Buttresses
+        for offset in [-width * 0.25, 0.0, width * 0.25]:
+            for wz in [hh + wall_thick * 0.55, -hh - wall_thick * 0.55]:
+                b_pil = Entity(model='cube', texture='textures/stone_brick.png', color=color.tint(wall_col, -0.15), scale=(1.8, wall_h * 1.18, wall_thick * 1.35), position=(offset, (wall_h * 1.18) / 2.0, wz))
+                self.decorations.append(b_pil)
+            for wx in [hw + wall_thick * 0.55, -hw - wall_thick * 0.55]:
+                b_pil = Entity(model='cube', texture='textures/stone_brick.png', color=color.tint(wall_col, -0.15), scale=(wall_thick * 1.35, wall_h * 1.18, 1.8), position=(wx, (wall_h * 1.18) / 2.0, offset))
+                self.decorations.append(b_pil)
+
+        # 4 Corner Watchtowers with Conical Spires & Floating Beacon Crystals
         for cx, cz in [(-hw, -hh), (hw, -hh), (-hw, hh), (hw, hh)]:
-            pillar = Entity(model=Cylinder(resolution=12), texture='textures/stone_brick.png', color=color.tint(wall_col, -0.2), scale=(wall_thick * 1.8, wall_h * 1.4, wall_thick * 1.8), position=(cx, (wall_h * 1.4) / 2.0, cz))
-            self.decorations.append(pillar)
+            pillar = Entity(model=Cylinder(resolution=14), texture='textures/stone_brick.png', color=color.tint(wall_col, -0.18), scale=(wall_thick * 2.0, wall_h * 1.55, wall_thick * 2.0), position=(cx, 0.0, cz))
+            roof = Entity(model=Cone(resolution=14), color=color.tint(wall_col, 0.15), scale=(wall_thick * 2.5, 2.2, wall_thick * 2.5), position=(cx, wall_h * 1.55, cz))
+            beacon = Entity(model='cube', color=grid_col, scale=(0.75, 0.75, 0.75), position=(cx, wall_h * 1.55 + 2.8, cz), rotation=(45, 45, 45))
+            self.decorations.extend([pillar, roof, beacon])
+            self.animated_spinners.append((beacon, 95.0))
+
+        # Distant Scenic Horizon Peaks outside the Arena
+        self.build_outer_vista(width, height, wall_col, grid_col)
 
         # Build theme-specific high-detail 3D models & obstacles
         theme = lvl["theme"]
@@ -255,6 +292,30 @@ class LevelManager:
         builder = theme_dispatch.get(theme, self.build_forest_obstacles)
         builder()
 
+    def build_outer_vista(self, width, height, wall_col, accent_col):
+        """Constructs a scenic ring of distant 3D mountains/monoliths outside the arena."""
+        vista_radius = max(width, height) * 0.86
+        for i in range(12):
+            ang = math.radians(i * 30.0 + 15.0)
+            vx = math.sin(ang) * vista_radius
+            vz = math.cos(ang) * vista_radius
+            peak_h = 14.0 + (i % 3) * 5.0
+            peak_w = 9.0 + (i % 2) * 3.5
+            peak = Entity(
+                model=Cone(resolution=6),
+                color=color.tint(wall_col, -0.28),
+                scale=(peak_w, peak_h, peak_w),
+                position=(vx, -2.0, vz),
+                rotation=(0, i * 30, 0)
+            )
+            orb = Entity(
+                model='sphere',
+                color=accent_col,
+                scale=(1.2, 1.2, 1.2),
+                position=(vx, peak_h - 0.8, vz)
+            )
+            self.decorations.extend([peak, orb])
+
     # ================= 1. EMERALD FOREST =================
     def build_forest_obstacles(self):
         # High-Detail Conifer Pines
@@ -277,47 +338,52 @@ class LevelManager:
         # Flared Root Base grounded on arena floor (1.5x smaller)
         root_base = Entity(model=Cylinder(resolution=12), texture='textures/bark.png', color=color.rgb32(95, 60, 35), scale=(1.27, 0.53, 1.27), position=(x, 0.0, z))
         # Main tree trunk (1.5x thinner: width 0.70; tall enough so 1.8m of trunk is clearly visible below branches)
-        trunk = Entity(model=Cylinder(resolution=12), texture='textures/bark.png', color=color.rgb32(110, 75, 45), scale=(0.70, 6.2, 0.70), position=(x, 0.0, z))
+        trunk = Entity(model=Cylinder(resolution=12), texture='textures/bark.png', color=color.rgb32(115, 78, 46), scale=(0.70, 6.2, 0.70), position=(x, 0.0, z))
+        # Small lower bark branch stub on visible trunk
+        Entity(parent=trunk, model=Cylinder(resolution=8), texture='textures/bark.png', color=color.rgb32(100, 65, 38), scale=(0.24, 0.22, 0.24), position=(0.45, 0.18, 0), rotation=(0, 0, -55))
         trunk.collision_radius = 0.85
         self.obstacles.append(trunk)
         self.decorations.append(root_base)
 
         # 4 Tiers of Realistic Conical Foliage (1.5x larger crown, elevated so bottom branches hover 1.8m above ground)
         tiers = [
-            (6.0, 3.6, 3.6),   # Bottom at y=1.8m (1.8m trunk clearance), top at y=5.4m
-            (4.8, 3.2, 5.2),   # Bottom at y=3.6m, top at y=6.8m
-            (3.6, 2.8, 6.7),   # Bottom at y=5.3m, top at y=8.1m
-            (2.25, 2.4, 8.1)   # Bottom at y=6.9m, top at y=9.3m
+            (6.0, 3.6, 3.6, color.rgb32(30, 128, 50)),   # Bottom at y=1.8m (1.8m trunk clearance), top at y=5.4m
+            (4.8, 3.2, 5.2, color.rgb32(36, 142, 58)),   # Bottom at y=3.6m, top at y=6.8m
+            (3.6, 2.8, 6.7, color.rgb32(44, 156, 66)),   # Bottom at y=5.3m, top at y=8.1m
+            (2.25, 2.4, 8.1, color.rgb32(55, 172, 75))   # Bottom at y=6.9m, top at y=9.3m
         ]
-        for scale_xz, scale_y, y_pos in tiers:
-            leaf = Entity(model=Cone(resolution=16), texture='textures/pine_needles.png', color=color.rgb32(35, 135, 55), scale=(scale_xz, scale_y, scale_xz), position=(x, y_pos, z))
+        for scale_xz, scale_y, y_pos, leaf_col in tiers:
+            leaf = Entity(model=Cone(resolution=16), texture='textures/pine_needles.png', color=leaf_col, scale=(scale_xz, scale_y, scale_xz), position=(x, y_pos, z))
             self.decorations.append(leaf)
 
     def create_mushroom(self, x, z):
         stem = Entity(model=Cylinder(resolution=10), color=color.rgb32(245, 245, 230), scale=(0.55, 1.3, 0.55), position=(x, 0.0, z))
+        # Stem skirt ring
+        Entity(parent=stem, model=Cone(resolution=10), color=color.rgb32(235, 230, 210), scale=(1.55, 0.22, 1.55), position=(0, 0.62, 0))
         # Red Domed Cap
         cap = Entity(model='sphere', color=color.rgb32(235, 40, 40), scale=(1.5, 0.75, 1.5), position=(x, 1.3, z))
         # Gills underneath
         Entity(parent=cap, model=Cylinder(resolution=12), color=color.rgb32(220, 215, 190), scale=(0.9, 0.15, 0.9), position=(0, -0.2, 0))
         # 3D White Spore Studs
-        for sx, sz in [(-0.35, 0.25), (0.35, -0.25), (0.25, 0.35), (-0.25, -0.35), (0, 0.45)]:
-            Entity(parent=cap, model='sphere', color=color.white, scale=(0.2, 0.15, 0.2), position=(sx, 0.28, sz))
+        for sx, sz in [(-0.35, 0.25), (0.35, -0.25), (0.25, 0.35), (-0.25, -0.35), (0, 0.45), (0, 0.0)]:
+            Entity(parent=cap, model='sphere', color=color.white, scale=(0.2, 0.16, 0.2), position=(sx, 0.30, sz))
         cap.collision_radius = 0.9
         self.obstacles.append(cap)
         self.decorations.append(stem)
 
     def create_mossy_boulder(self, x, z):
-        rock = Entity(model='sphere', color=color.rgb32(85, 95, 80), scale=(2.6, 1.6, 2.4), position=(x, 0.8, z))
-        # Moss Patches
-        Entity(parent=rock, model='sphere', color=color.rgb32(45, 130, 50), scale=(0.85, 0.35, 0.85), position=(0, 0.45, 0))
-        Entity(parent=rock, model='sphere', color=color.rgb32(70, 75, 65), scale=(0.7, 0.9, 0.7), position=(0.5, -0.1, 0.3))
+        rock = Entity(model='sphere', texture='textures/stone_brick.png', color=color.rgb32(95, 105, 90), scale=(2.6, 1.6, 2.4), position=(x, 0.8, z))
+        # Moss Patches & Small Glowing Forest Crystal
+        Entity(parent=rock, model='sphere', texture='textures/pine_needles.png', color=color.rgb32(45, 140, 55), scale=(0.86, 0.38, 0.86), position=(0, 0.44, 0))
+        Entity(parent=rock, model='sphere', color=color.rgb32(75, 80, 70), scale=(0.7, 0.9, 0.7), position=(0.5, -0.1, 0.3))
         rock.collision_radius = 1.3
         self.obstacles.append(rock)
 
     def create_hollow_log(self, x, z, rot):
-        log = Entity(model=Cylinder(resolution=12), texture='textures/bark.png', color=color.rgb32(100, 65, 38), scale=(1.3, 4.2, 1.3), position=(x, 0.65, z), rotation=(90, rot, 0))
-        # Dark Hollow Core
+        log = Entity(model=Cylinder(resolution=12), texture='textures/bark.png', color=color.rgb32(105, 70, 42), scale=(1.3, 4.2, 1.3), position=(x, 0.65, z), rotation=(90, rot, 0))
+        # Dark Hollow Core + Top Moss Strip
         Entity(parent=log, model=Cylinder(resolution=10), color=color.rgb32(20, 15, 10), scale=(0.7, 1.05, 0.7))
+        Entity(parent=log, model='sphere', color=color.rgb32(45, 145, 55), scale=(0.55, 0.75, 0.35), position=(0, 0.5, -0.45))
         log.collision_radius = 1.5
         self.obstacles.append(log)
 
@@ -337,17 +403,18 @@ class LevelManager:
         mid = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(225, 185, 120), scale=(3.8, 1.2, 3.8), position=(x, 1.8, z))
         top_step = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(235, 195, 130), scale=(2.2, 1.0, 2.2), position=(x, 2.9, z))
         # Golden Capstone (Pyramidion)
-        cap = Entity(model=Cone(resolution=4), color=color.rgb32(255, 215, 50), scale=(1.8, 1.4, 1.8), position=(x, 4.0, z), rotation=(0, 45, 0))
-        # 4 Corner Flame Braziers
+        cap = Entity(model=Cone(resolution=4), color=color.rgb32(255, 215, 50), scale=(1.8, 1.4, 1.8), position=(x, 3.4, z), rotation=(0, 45, 0))
+        # 4 Corner Flame Braziers (tracked in decorations)
         for bx, bz in [(-2.2, -2.2), (2.2, -2.2), (-2.2, 2.2), (2.2, 2.2)]:
-            Entity(model=Cylinder(resolution=8), color=color.rgb32(80, 70, 60), scale=(0.4, 1.0, 0.4), position=(x + bx, 0.0, z + bz))
-            Entity(model='sphere', color=color.rgb32(255, 100, 20), scale=(0.35, 0.35, 0.35), position=(x + bx, 1.1, z + bz))
+            b_stand = Entity(model=Cylinder(resolution=8), color=color.rgb32(80, 70, 60), scale=(0.42, 1.05, 0.42), position=(x + bx, 0.0, z + bz))
+            b_flame = Entity(model='sphere', color=color.rgb32(255, 110, 20), scale=(0.38, 0.45, 0.38), position=(x + bx, 1.15, z + bz))
+            self.decorations.extend([b_stand, b_flame])
         base.collision_radius = 2.6
         self.obstacles.append(base)
         self.decorations.extend([mid, top_step, cap])
 
     def create_cactus(self, x, z):
-        c_col = color.rgb32(45, 140, 65)
+        c_col = color.rgb32(45, 145, 65)
         mound = Entity(model='sphere', color=color.rgb32(190, 155, 100), scale=(1.6, 0.4, 1.6), position=(x, 0.1, z))
         trunk = Entity(model=Cylinder(resolution=12), color=c_col, scale=(0.95, 3.8, 0.95), position=(x, 0.0, z))
         trunk.collision_radius = 1.0
@@ -360,16 +427,18 @@ class LevelManager:
         arm_r_h = Entity(model=Cylinder(resolution=8), color=c_col, scale=(0.5, 1.1, 0.5), position=(x + 0.7, 1.5, z), rotation=(0, 0, 90))
         arm_r_v = Entity(model=Cylinder(resolution=8), color=c_col, scale=(0.5, 1.5, 0.5), position=(x + 1.2, 1.5, z))
         # Red desert blossom on top
-        flower = Entity(model='sphere', color=color.rgb32(245, 45, 75), scale=(0.5, 0.35, 0.5), position=(x, 3.9, z))
+        flower = Entity(model='sphere', color=color.rgb32(250, 50, 80), scale=(0.55, 0.38, 0.55), position=(x, 3.9, z))
         self.decorations.extend([arm_l_h, arm_l_v, arm_r_h, arm_r_v, flower])
 
     def create_obelisk(self, x, z):
         pedestal = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(180, 140, 85), scale=(1.8, 0.8, 1.8), position=(x, 0.4, z))
-        shaft = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(210, 170, 105), scale=(1.2, 5.0, 1.2), position=(x, 3.2, z))
-        pyramid_tip = Entity(model=Cone(resolution=4), color=color.rgb32(255, 215, 60), scale=(1.4, 1.2, 1.4), position=(x, 6.2, z), rotation=(0, 45, 0))
+        shaft = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(215, 175, 110), scale=(1.2, 5.0, 1.2), position=(x, 3.2, z))
+        pyramid_tip = Entity(model=Cone(resolution=4), color=color.rgb32(255, 215, 60), scale=(1.4, 1.2, 1.4), position=(x, 5.7, z), rotation=(0, 45, 0))
+        sun_disc = Entity(model='cube', color=color.rgb32(255, 230, 80), scale=(0.65, 0.65, 0.15), position=(x, 7.3, z), rotation=(45, 0, 45))
         pedestal.collision_radius = 1.25
         self.obstacles.append(pedestal)
-        self.decorations.extend([shaft, pyramid_tip])
+        self.decorations.extend([shaft, pyramid_tip, sun_disc])
+        self.animated_spinners.append((sun_disc, 110.0))
 
     # ================= 3. ABYSSAL OCEAN =================
     def build_ocean_obstacles(self):
@@ -394,21 +463,23 @@ class LevelManager:
         base = Entity(model='sphere', color=col, scale=(2.8, 1.8, 2.8), position=(x, 0.9, z))
         base.collision_radius = 1.45
         self.obstacles.append(base)
-        for i in range(5):
-            ang = i * (360.0 / 5.0)
+        for i in range(6):
+            ang = i * (360.0 / 6.0)
             rad = math.radians(ang)
-            bx = math.sin(rad) * 0.75
-            bz = math.cos(rad) * 0.75
-            branch = Entity(parent=base, model=Cylinder(resolution=8), color=color.tint(col, 0.15), scale=(0.28, 1.4, 0.28), position=(bx, 0.6, bz), rotation=(25 * math.cos(rad), ang, 25 * math.sin(rad)))
-            Entity(parent=branch, model='sphere', color=color.white, scale=(1.2, 0.3, 1.2), position=(0, 0.5, 0))
+            bx = math.sin(rad) * 0.72
+            bz = math.cos(rad) * 0.72
+            branch = Entity(parent=base, model=Cylinder(resolution=8), color=color.tint(col, 0.15), scale=(0.28, 1.45, 0.28), position=(bx, 0.55, bz), rotation=(25 * math.cos(rad), ang, 25 * math.sin(rad)))
+            Entity(parent=branch, model='sphere', color=color.white, scale=(1.25, 0.32, 1.25), position=(0, 0.95, 0))
 
     def create_giant_clam(self, x, z):
-        bottom_shell = Entity(model='sphere', color=color.rgb32(90, 110, 140), scale=(2.4, 0.8, 2.0), position=(x, 0.4, z))
-        top_shell = Entity(model='sphere', color=color.rgb32(110, 130, 165), scale=(2.4, 0.8, 2.0), position=(x, 1.1, z), rotation=(25, 0, 0))
-        pearl = Entity(model='sphere', color=color.rgb32(255, 250, 240), scale=(0.85, 0.85, 0.85), position=(x, 0.75, z))
+        bottom_shell = Entity(model='sphere', color=color.rgb32(90, 110, 145), scale=(2.4, 0.8, 2.0), position=(x, 0.4, z))
+        top_shell = Entity(model='sphere', color=color.rgb32(115, 138, 175), scale=(2.4, 0.8, 2.0), position=(x, 1.15, z), rotation=(-28, 0, 0))
+        pearl = Entity(model='sphere', color=color.rgb32(255, 250, 240), scale=(0.9, 0.9, 0.9), position=(x, 0.78, z))
+        halo = Entity(parent=pearl, model='cube', color=color.rgba32(120, 240, 255, 170), scale=(1.4, 0.08, 1.4), rotation=(25, 0, 25))
         bottom_shell.collision_radius = 1.3
         self.obstacles.append(bottom_shell)
         self.decorations.extend([top_shell, pearl])
+        self.animated_spinners.append((halo, 130.0))
 
     # ================= 4. DEEP SPACE =================
     def build_space_obstacles(self):
@@ -422,21 +493,22 @@ class LevelManager:
         self.dynamic_hazards.append(MovingLaserBarrier((-12, 0.6, -11), (12, 0.6, -11), move_speed=2.6, beam_color=color.rgb32(255, 40, 180)))
 
     def create_satellite_probe(self, x, z):
-        core = Entity(model='sphere', color=color.rgb32(245, 200, 45), scale=(2.0, 2.0, 2.0), position=(x, 2.4, z))
+        core = Entity(model='sphere', color=color.rgb32(245, 200, 45), scale=(2.0, 2.0, 2.0), position=(x, 2.2, z))
         core.collision_radius = 1.4
         self.obstacles.append(core)
-        panel_l = Entity(parent=core, model='cube', color=color.rgb32(30, 60, 180), scale=(2.2, 0.08, 0.9), position=(-1.8, 0, 0))
-        panel_r = Entity(parent=core, model='cube', color=color.rgb32(30, 60, 180), scale=(2.2, 0.08, 0.9), position=(1.8, 0, 0))
-        dish = Entity(parent=core, model=Cone(resolution=14), color=color.rgb32(220, 225, 240), scale=(0.9, 0.5, 0.9), position=(0, 0.9, 0), rotation=(180, 0, 0))
+        Entity(parent=core, model='cube', color=color.rgb32(30, 75, 205), scale=(2.3, 0.08, 0.95), position=(-1.8, 0, 0))
+        Entity(parent=core, model='cube', color=color.rgb32(30, 75, 205), scale=(2.3, 0.08, 0.95), position=(1.8, 0, 0))
+        Entity(parent=core, model=Cone(resolution=14), color=color.rgb32(220, 225, 240), scale=(0.9, 0.5, 0.9), position=(0, 0.9, 0), rotation=(180, 0, 0))
+        self.animated_spinners.append((core, 32.0))
 
     def create_asteroid_rock(self, x, z):
-        ast = Entity(model='sphere', color=color.rgb32(90, 80, 110), scale=(2.8, 2.2, 2.8), position=(x, 1.2, z))
+        ast = Entity(model='sphere', texture='textures/magma_rock.png', color=color.rgb32(125, 110, 155), scale=(2.8, 2.2, 2.8), position=(x, 1.2, z))
         ast.collision_radius = 1.45
         self.obstacles.append(ast)
         for i in range(4):
             ang = i * 90
             rad = math.radians(ang)
-            Entity(parent=ast, model='sphere', color=color.rgb32(65, 55, 80), scale=(0.4, 0.4, 0.4), position=(math.sin(rad) * 0.45, 0.1, math.cos(rad) * 0.45))
+            Entity(parent=ast, model=Cone(resolution=5), texture='textures/crystal_facet.png', color=color.rgb32(180, 90, 255), scale=(0.35, 0.65, 0.35), position=(math.sin(rad) * 0.42, 0.25, math.cos(rad) * 0.42), rotation=(35 * math.cos(rad), ang, 35 * math.sin(rad)))
 
     # ================= 5. CYBER FACTORY =================
     def build_factory_obstacles(self):
@@ -451,14 +523,15 @@ class LevelManager:
         self.dynamic_hazards.append(MovingLaserBarrier((-10, 0.6, -5), (10, 0.6, -5), move_speed=3.0, beam_color=color.rgb32(255, 60, 40)))
 
     def create_cooling_tower(self, x, z):
-        base = Entity(model=Cylinder(resolution=16), texture='textures/metal_crate.png', color=color.rgb32(85, 90, 100), scale=(2.6, 4.8, 2.6), position=(x, 0.0, z))
-        lip = Entity(model=Cylinder(resolution=16), color=color.rgb32(240, 170, 20), scale=(2.9, 0.5, 2.9), position=(x, 4.6, z))
+        base = Entity(model=Cylinder(resolution=16), texture='textures/metal_crate.png', color=color.rgb32(130, 138, 150), scale=(2.6, 4.8, 2.6), position=(x, 0.0, z))
+        lip = Entity(model=Cylinder(resolution=16), color=color.rgb32(240, 175, 20), scale=(2.95, 0.5, 2.95), position=(x, 4.6, z))
+        core = Entity(model='sphere', color=color.rgb32(255, 110, 20), scale=(1.5, 0.6, 1.5), position=(x, 5.0, z))
         base.collision_radius = 1.5
         self.obstacles.append(base)
-        self.decorations.append(lip)
+        self.decorations.extend([lip, core])
 
     def create_cargo_crate(self, x, z):
-        crate = Entity(model='cube', texture='textures/metal_crate.png', color=color.rgb32(180, 140, 30), scale=(2.4, 2.4, 2.4), position=(x, 1.2, z))
+        crate = Entity(model='cube', texture='textures/metal_crate.png', color=color.rgb32(225, 185, 60), scale=(2.4, 2.4, 2.4), position=(x, 1.2, z))
         crate.collision_radius = 1.35
         self.obstacles.append(crate)
 
@@ -476,9 +549,11 @@ class LevelManager:
         self.dynamic_hazards.append(RotatingGear((0, 0.6, -15), rot_speed=70.0, col=color.rgb32(255, 0, 128), radius=2.0))
 
     def create_skyscraper(self, x, z, h):
-        tower = Entity(model='cube', color=color.rgb32(22, 28, 48), scale=(3.4, h, 3.4), position=(x, h / 2.0, z))
-        ac = Entity(parent=tower, model='cube', color=color.rgb32(70, 75, 85), scale=(0.5, 0.15, 0.5), position=(0.2, 0.52, 0.2))
-        antenna = Entity(parent=tower, model=Cylinder(resolution=8), color=color.rgb32(0, 220, 255), scale=(0.08, 0.6, 0.08), position=(-0.3, 0.75, -0.3))
+        tower = Entity(model='cube', texture='textures/cyber_building.png', color=color.white, scale=(3.4, h, 3.4), position=(x, h / 2.0, z))
+        if hasattr(tower, 'texture_scale'):
+            tower.texture_scale = (1.0, max(1.0, int(h / 4.0)))
+        Entity(parent=tower, model='cube', color=color.rgb32(0, 235, 255), scale=(1.04, 0.04, 1.04), position=(0, 0.5, 0))
+        Entity(parent=tower, model=Cylinder(resolution=8), color=color.rgb32(255, 0, 140), scale=(0.08, 0.35, 0.08), position=(0, 0.52, 0))
         tower.collision_radius = 1.9
         self.obstacles.append(tower)
 
@@ -493,15 +568,15 @@ class LevelManager:
         self.dynamic_hazards.append(MovingLaserBarrier((-10, 0.6, -10), (10, 0.6, -10), move_speed=2.5, beam_color=color.rgb32(100, 220, 255)))
 
     def create_ice_spire(self, x, z):
-        spire = Entity(model=Cone(resolution=8), color=color.rgb32(150, 225, 255), scale=(2.2, 6.5, 2.2), position=(x, 3.25, z))
-        snow_base = Entity(model='sphere', color=color.rgb32(245, 250, 255), scale=(3.0, 1.0, 3.0), position=(x, 0.5, z))
+        spire = Entity(model=Cone(resolution=8), texture='textures/crystal_facet.png', color=color.rgb32(165, 235, 255), scale=(2.2, 6.5, 2.2), position=(x, 0.0, z))
+        snow_base = Entity(model='sphere', color=color.rgb32(245, 250, 255), scale=(3.0, 1.0, 3.0), position=(x, 0.4, z))
         spire.collision_radius = 1.45
         self.obstacles.append(spire)
         self.decorations.append(snow_base)
 
     def create_igloo(self, x, z):
-        dome = Entity(model='sphere', color=color.rgb32(235, 245, 255), scale=(3.2, 2.4, 3.2), position=(x, 1.2, z))
-        tunnel = Entity(model=Cylinder(resolution=10), color=color.rgb32(220, 235, 250), scale=(1.2, 1.6, 1.2), position=(x, 0.7, z + 1.6), rotation=(90, 0, 0))
+        dome = Entity(model='sphere', texture='textures/stone_brick.png', color=color.rgb32(225, 242, 255), scale=(3.2, 2.4, 3.2), position=(x, 1.1, z))
+        tunnel = Entity(model=Cylinder(resolution=10), color=color.rgb32(210, 232, 250), scale=(1.2, 1.6, 1.2), position=(x, 0.7, z + 1.6), rotation=(90, 0, 0))
         dome.collision_radius = 1.7
         self.obstacles.append(dome)
         self.decorations.append(tunnel)
@@ -517,16 +592,19 @@ class LevelManager:
         self.dynamic_hazards.append(MovingLaserBarrier((-12, 0.6, -8), (12, 0.6, -8), move_speed=3.2, beam_color=color.rgb32(255, 60, 10)))
 
     def create_volcanic_chimney(self, x, z):
-        cone = Entity(model=Cone(resolution=12), texture='textures/magma_rock.png', color=color.rgb32(70, 35, 30), scale=(3.2, 4.5, 3.2), position=(x, 2.25, z))
-        molten_core = Entity(model='sphere', color=color.rgb32(255, 120, 20), scale=(1.2, 1.2, 1.2), position=(x, 4.2, z))
+        cone = Entity(model=Cone(resolution=12), texture='textures/magma_rock.png', color=color.rgb32(195, 140, 120), scale=(3.2, 4.5, 3.2), position=(x, 0.0, z))
+        lava_pool = Entity(model='sphere', color=color.rgb32(255, 95, 15), scale=(3.6, 0.16, 3.6), position=(x, 0.06, z))
+        molten_core = Entity(model='sphere', color=color.rgb32(255, 165, 30), scale=(1.25, 1.25, 1.25), position=(x, 4.3, z))
         cone.collision_radius = 1.65
         self.obstacles.append(cone)
-        self.decorations.append(molten_core)
+        self.decorations.extend([lava_pool, molten_core])
 
     def create_basalt_pillar(self, x, z):
-        pillar = Entity(model=Cylinder(resolution=6), color=color.rgb32(35, 25, 30), scale=(1.8, 5.2, 1.8), position=(x, 0.0, z))
+        pillar = Entity(model=Cylinder(resolution=6), texture='textures/magma_rock.png', color=color.rgb32(140, 110, 115), scale=(1.8, 5.2, 1.8), position=(x, 0.0, z))
+        cap = Entity(model=Cylinder(resolution=6), color=color.rgb32(255, 110, 20), scale=(1.5, 0.25, 1.5), position=(x, 5.1, z))
         pillar.collision_radius = 1.3
         self.obstacles.append(pillar)
+        self.decorations.append(cap)
 
     # ================= 9. CRYSTAL CAVERNS =================
     def build_crystal_obstacles(self):
@@ -537,11 +615,11 @@ class LevelManager:
         self.dynamic_hazards.append(RotatingGear((0, 0.6, -12), rot_speed=-65.0, col=color.rgb32(210, 80, 255), radius=2.2))
 
     def create_geode_cluster(self, x, z):
-        base = Entity(model='sphere', color=color.rgb32(75, 65, 80), scale=(2.6, 1.2, 2.6), position=(x, 0.6, z))
+        base = Entity(model='sphere', color=color.rgb32(75, 65, 85), scale=(2.6, 1.2, 2.6), position=(x, 0.6, z))
         base.collision_radius = 1.4
         self.obstacles.append(base)
-        for i, (scale_h, rot_x, rot_z) in enumerate([(4.5, 15, 20), (3.6, -20, 15), (3.0, 10, -25)]):
-            cryst = Entity(parent=base, model=Cone(resolution=6), color=color.rgb32(210, 60, 255), scale=(0.4, scale_h / 1.2, 0.4), position=(0, 0.5, 0), rotation=(rot_x, i * 120, rot_z))
+        for i, (scale_h, rot_x, rot_z) in enumerate([(4.6, 15, 20), (3.8, -20, 15), (3.2, 10, -25), (3.5, -12, -18)]):
+            Entity(parent=base, model=Cone(resolution=6), texture='textures/crystal_facet.png', color=color.rgb32(225, 95, 255), scale=(0.42, scale_h / 1.2, 0.42), position=(0, 0.2, 0), rotation=(rot_x, i * 90, rot_z))
 
     # ================= 10. LOST JUNGLE =================
     def build_jungle_obstacles(self):
@@ -554,19 +632,27 @@ class LevelManager:
     def create_palm_tree(self, x, z):
         mound = Entity(model='sphere', color=color.rgb32(110, 85, 45), scale=(1.2, 0.33, 1.2), position=(x, 0.1, z))
         # Slender trunk (1.5x thinner: width 0.63) with tall clear visibility below fronds
-        trunk = Entity(model=Cylinder(resolution=10), texture='textures/bark.png', color=color.rgb32(120, 80, 45), scale=(0.63, 5.0, 0.63), position=(x, 0.0, z))
+        trunk = Entity(model=Cylinder(resolution=10), texture='textures/bark.png', color=color.rgb32(125, 85, 48), scale=(0.63, 5.0, 0.63), position=(x, 0.0, z))
         trunk.collision_radius = 0.70
         self.obstacles.append(trunk)
         self.decorations.append(mound)
-        # 8 Radial Fronds (1.5x larger crown, perched atop tall trunk)
+        # Coconuts nestled under crown
+        for ci in range(3):
+            c_ang = math.radians(ci * 120)
+            coco = Entity(model='sphere', color=color.rgb32(90, 55, 25), scale=(0.42, 0.42, 0.42), position=(x + math.sin(c_ang) * 0.38, 4.65, z + math.cos(c_ang) * 0.38))
+            self.decorations.append(coco)
+        # 8 Radial Fronds (1.5x larger crown, perched atop tall trunk; properly tracked in decorations)
         for i in range(8):
             ang = i * (360.0 / 8.0)
             rad = math.radians(ang)
-            Entity(model='sphere', color=color.rgb32(30, 160, 50), scale=(4.2, 0.22, 1.2), position=(x + math.sin(rad) * 1.95, 4.95, z + math.cos(rad) * 1.95), rotation=(-18, ang, 0))
+            frond = Entity(model='sphere', texture='textures/pine_needles.png', color=color.rgb32(38, 175, 58), scale=(4.2, 0.22, 1.2), position=(x + math.sin(rad) * 1.95, 4.95, z + math.cos(rad) * 1.95), rotation=(-18, ang, 0))
+            self.decorations.append(frond)
 
     def create_tribal_totem(self, x, z):
-        totem = Entity(model=Cylinder(resolution=12), color=color.rgb32(110, 85, 55), scale=(1.6, 5.5, 1.6), position=(x, 0.0, z))
-        Entity(parent=totem, model='cube', color=color.rgb32(230, 50, 40), scale=(2.2, 0.4, 0.2), position=(0, 0.6, 0))
+        totem = Entity(model=Cylinder(resolution=12), texture='textures/sandstone_rune.png', color=color.rgb32(165, 130, 85), scale=(1.6, 5.5, 1.6), position=(x, 0.0, z))
+        Entity(parent=totem, model='cube', color=color.rgb32(235, 55, 40), scale=(2.3, 0.12, 0.25), position=(0, 0.65, 0))
+        Entity(parent=totem, model='sphere', color=color.rgb32(40, 255, 120), scale=(0.28, 0.08, 0.28), position=(-0.28, 0.78, 0.45))
+        Entity(parent=totem, model='sphere', color=color.rgb32(40, 255, 120), scale=(0.28, 0.08, 0.28), position=(0.28, 0.78, 0.45))
         totem.collision_radius = 1.45
         self.obstacles.append(totem)
 
@@ -580,10 +666,12 @@ class LevelManager:
     def create_pantheon_pillar(self, x, z):
         plinth = Entity(model='cube', color=color.rgb32(230, 235, 245), scale=(1.8, 0.6, 1.8), position=(x, 0.3, z))
         shaft = Entity(model=Cylinder(resolution=16), color=color.rgb32(245, 250, 255), scale=(1.1, 4.8, 1.1), position=(x, 0.6, z))
-        capital = Entity(model='cube', color=color.rgb32(230, 235, 245), scale=(1.8, 0.6, 1.8), position=(x, 5.7, z))
+        capital = Entity(model='cube', color=color.rgb32(245, 215, 90), scale=(1.9, 0.6, 1.9), position=(x, 5.7, z))
+        halo = Entity(model='cube', color=color.rgba32(255, 240, 120, 190), scale=(1.6, 0.12, 1.6), position=(x, 6.6, z), rotation=(25, 0, 25))
         plinth.collision_radius = 1.3
         self.obstacles.append(plinth)
-        self.decorations.extend([shaft, capital])
+        self.decorations.extend([shaft, capital, halo])
+        self.animated_spinners.append((halo, 90.0))
 
     # ================= 12. TOXIC WASTELAND =================
     def build_toxic_obstacles(self):
@@ -594,11 +682,12 @@ class LevelManager:
         self.dynamic_hazards.append(RotatingGear((0, 0.6, 13), rot_speed=70.0, col=color.rgb32(190, 220, 30), radius=2.2))
 
     def create_biohazard_barrel(self, x, z):
-        drum = Entity(model=Cylinder(resolution=14), color=color.rgb32(220, 190, 25), scale=(1.8, 3.4, 1.8), position=(x, 0.0, z))
+        drum = Entity(model=Cylinder(resolution=14), texture='textures/metal_crate.png', color=color.rgb32(225, 200, 35), scale=(1.8, 3.4, 1.8), position=(x, 0.0, z))
         drum.collision_radius = 1.35
         self.obstacles.append(drum)
-        puddle = Entity(model='sphere', color=color.rgb32(60, 255, 20), scale=(2.6, 0.1, 2.6), position=(x, 0.05, z))
-        self.decorations.append(puddle)
+        puddle = Entity(model='sphere', color=color.rgb32(65, 255, 30), scale=(2.8, 0.12, 2.8), position=(x, 0.05, z))
+        cap_glow = Entity(model=Cylinder(resolution=12), color=color.rgb32(90, 255, 45), scale=(1.5, 0.15, 1.5), position=(x, 3.4, z))
+        self.decorations.extend([puddle, cap_glow])
 
     # ================= 13. MYSTIC SWAMP =================
     def build_swamp_obstacles(self):
@@ -609,13 +698,14 @@ class LevelManager:
 
     def create_cypress_tree(self, x, z):
         # 1.5x thinner trunk with tall visible clearance below moss dome
-        trunk = Entity(model=Cylinder(resolution=10), texture='textures/bark.png', color=color.rgb32(85, 55, 40), scale=(0.73, 4.6, 0.73), position=(x, 0.0, z))
-        buttress = Entity(model=Cone(resolution=10), texture='textures/bark.png', color=color.rgb32(75, 50, 35), scale=(1.87, 1.8, 1.87), position=(x, 0.9, z))
+        trunk = Entity(model=Cylinder(resolution=10), texture='textures/bark.png', color=color.rgb32(90, 60, 42), scale=(0.73, 4.6, 0.73), position=(x, 0.0, z))
+        buttress = Entity(model=Cone(resolution=10), texture='textures/bark.png', color=color.rgb32(80, 52, 36), scale=(1.87, 1.8, 1.87), position=(x, 0.0, z))
         # 1.5x larger crown (perched at y=4.6, bottom at 3.55m)
-        moss = Entity(model='sphere', color=color.rgb32(45, 120, 55), scale=(4.8, 2.1, 4.8), position=(x, 4.6, z))
+        moss = Entity(model='sphere', texture='textures/pine_needles.png', color=color.rgb32(55, 145, 65), scale=(4.8, 2.1, 4.8), position=(x, 4.6, z))
+        wisp = Entity(model='sphere', color=color.rgb32(160, 255, 90), scale=(0.45, 0.45, 0.45), position=(x + 1.1, 2.2, z))
         trunk.collision_radius = 0.95
         self.obstacles.append(trunk)
-        self.decorations.extend([buttress, moss])
+        self.decorations.extend([buttress, moss, wisp])
 
     # ================= 14. ANCIENT NECROPOLIS =================
     def build_necropolis_obstacles(self):
@@ -626,9 +716,9 @@ class LevelManager:
         self.dynamic_hazards.append(MovingLaserBarrier((-12, 0.6, 8), (12, 0.6, 8), move_speed=2.8, beam_color=color.rgb32(240, 180, 40)))
 
     def create_anubis_statue(self, x, z):
-        plinth = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(180, 140, 90), scale=(2.2, 1.8, 2.2), position=(x, 0.9, z))
-        statue = Entity(model=Cylinder(resolution=10), color=color.rgb32(25, 25, 30), scale=(1.2, 3.6, 1.2), position=(x, 1.8, z))
-        golden_head = Entity(model=Cone(resolution=6), color=color.rgb32(255, 210, 50), scale=(1.0, 1.2, 1.0), position=(x, 5.6, z))
+        plinth = Entity(model='cube', texture='textures/sandstone_rune.png', color=color.rgb32(185, 145, 95), scale=(2.2, 1.8, 2.2), position=(x, 0.9, z))
+        statue = Entity(model=Cylinder(resolution=10), color=color.rgb32(28, 28, 35), scale=(1.2, 3.6, 1.2), position=(x, 1.8, z))
+        golden_head = Entity(model=Cone(resolution=6), color=color.rgb32(255, 210, 50), scale=(1.05, 1.35, 1.05), position=(x, 5.4, z))
         plinth.collision_radius = 1.45
         self.obstacles.append(plinth)
         self.decorations.extend([statue, golden_head])
@@ -642,11 +732,12 @@ class LevelManager:
         self.dynamic_hazards.append(RotatingGear((11, 0.6, 7), rot_speed=-85.0, col=color.rgb32(210, 140, 50), radius=2.0))
 
     def create_clockwork_engine(self, x, z):
-        boiler = Entity(model=Cylinder(resolution=16), color=color.rgb32(195, 120, 60), scale=(2.2, 4.4, 2.2), position=(x, 0.0, z))
+        boiler = Entity(model=Cylinder(resolution=16), texture='textures/metal_crate.png', color=color.rgb32(205, 130, 65), scale=(2.2, 4.4, 2.2), position=(x, 0.0, z))
         boiler.collision_radius = 1.5
         self.obstacles.append(boiler)
-        Entity(parent=boiler, model=Cylinder(resolution=10), color=color.rgb32(230, 180, 80), scale=(0.4, 1.5, 0.4), position=(0.4, 0.6, 0))
-        Entity(parent=boiler, model='cube', color=color.rgb32(160, 90, 40), scale=(1.15, 0.15, 1.15), position=(0, 0.5, 0))
+        Entity(parent=boiler, model=Cylinder(resolution=10), color=color.rgb32(235, 185, 80), scale=(0.38, 1.4, 0.38), position=(0.35, 0.6, 0))
+        flywheel = Entity(parent=boiler, model='cube', color=color.rgb32(245, 200, 90), scale=(1.25, 0.14, 1.25), position=(0, 0.55, 0), rotation=(0, 45, 0))
+        self.animated_spinners.append((flywheel, 120.0))
 
     # ================= 16. EVENT HORIZON =================
     def build_event_horizon_obstacles(self):
@@ -660,8 +751,10 @@ class LevelManager:
         singularity = Entity(model='sphere', color=color.rgb32(15, 12, 25), scale=(2.6, 2.6, 2.6), position=(x, 1.8, z))
         singularity.collision_radius = 1.6
         self.obstacles.append(singularity)
-        Entity(parent=singularity, model='cube', color=color.rgba32(255, 100, 30, 200), scale=(1.45, 0.08, 1.45), rotation=(30, 45, 0))
-        Entity(parent=singularity, model='cube', color=color.rgba32(180, 40, 255, 200), scale=(1.6, 0.08, 1.6), rotation=(-30, -45, 0))
+        r1 = Entity(parent=singularity, model='cube', color=color.rgba32(255, 105, 30, 210), scale=(1.48, 0.08, 1.48), rotation=(30, 45, 0))
+        r2 = Entity(parent=singularity, model='cube', color=color.rgba32(185, 45, 255, 210), scale=(1.65, 0.08, 1.65), rotation=(-30, -45, 0))
+        self.animated_spinners.append((r1, 140.0))
+        self.animated_spinners.append((r2, -110.0))
 
     # ================= 17. DRAGON DUNGEON =================
     def build_dungeon_obstacles(self):
@@ -672,11 +765,12 @@ class LevelManager:
         self.dynamic_hazards.append(RotatingGear((0, 0.6, 12), rot_speed=75.0, col=color.rgb32(220, 60, 30), radius=2.4))
 
     def create_dungeon_turret(self, x, z):
-        tower = Entity(model=Cylinder(resolution=14), texture='textures/stone_brick.png', color=color.rgb32(65, 60, 70), scale=(2.2, 5.2, 2.2), position=(x, 0.0, z))
+        tower = Entity(model=Cylinder(resolution=14), texture='textures/stone_brick.png', color=color.rgb32(85, 78, 90), scale=(2.2, 5.2, 2.2), position=(x, 0.0, z))
         tower.collision_radius = 1.55
         self.obstacles.append(tower)
-        Entity(parent=tower, model=Cylinder(resolution=14), color=color.rgb32(45, 40, 50), scale=(1.15, 0.2, 1.15), position=(0, 1.0, 0))
-        Entity(parent=tower, model='sphere', color=color.rgb32(255, 80, 20), scale=(0.5, 0.5, 0.5), position=(0, 1.15, 0))
+        Entity(parent=tower, model=Cylinder(resolution=14), color=color.rgb32(45, 40, 50), scale=(1.18, 0.18, 1.18), position=(0, 0.95, 0))
+        brazier = Entity(parent=tower, model='sphere', color=color.rgb32(255, 85, 20), scale=(0.55, 0.55, 0.55), position=(0, 1.12, 0))
+        self.animated_spinners.append((brazier, 90.0))
 
     # ================= 18. QUANTUM CITADEL =================
     def build_quantum_obstacles(self):
@@ -689,16 +783,21 @@ class LevelManager:
         self.dynamic_hazards.append(MovingLaserBarrier((16, 0.6, 8), (-16, 0.6, 8), move_speed=3.8, beam_color=color.rgb32(0, 240, 255)))
 
     def create_quantum_obelisk(self, x, z):
-        core = Entity(model='sphere', color=color.rgb32(255, 0, 140), scale=(2.2, 2.2, 2.2), position=(x, 2.2, z))
+        core = Entity(model='sphere', texture='textures/crystal_facet.png', color=color.rgb32(255, 40, 160), scale=(2.2, 2.2, 2.2), position=(x, 2.2, z))
         core.collision_radius = 1.6
         self.obstacles.append(core)
-        Entity(parent=core, model=Cylinder(resolution=16), color=color.rgb32(0, 240, 255), scale=(1.4, 0.1, 1.4), rotation=(45, 0, 45))
-        Entity(parent=core, model=Cylinder(resolution=16), color=color.rgb32(255, 230, 0), scale=(1.7, 0.1, 1.7), rotation=(-45, 0, -45))
+        r1 = Entity(parent=core, model=Cylinder(resolution=16), color=color.rgb32(0, 240, 255), scale=(1.45, 0.08, 1.45), rotation=(45, 0, 45))
+        r2 = Entity(parent=core, model=Cylinder(resolution=16), color=color.rgb32(255, 230, 0), scale=(1.75, 0.08, 1.75), rotation=(-45, 0, -45))
+        self.animated_spinners.append((r1, 150.0))
+        self.animated_spinners.append((r2, -130.0))
 
     def update_dynamic_hazards(self, dt):
-        """Advances animations for dynamic barriers, gears, and lasers."""
+        """Advances animations for dynamic barriers, gears, lasers, and scenic spinners."""
         for haz in self.dynamic_hazards:
             haz.update(dt)
+        for ent, spd in self.animated_spinners:
+            if ent:
+                ent.rotation_y += dt * spd
 
     def check_wall_collision(self, snake):
         """Checks if snake's head hit the outer arena boundary walls."""

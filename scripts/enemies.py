@@ -1,13 +1,24 @@
 """
 AI Opponents and Enemies for 3D Snake.
 Autonomous enemy snakes with advanced multi-ray whisker sensors, 2D obstacle avoidance,
-apple and bonus power-up hunting, dynamic growth, and loot drops.
+apple and bonus power-up hunting, dynamic growth, armored dragon 3D models, and loot drops.
 """
 import random
 import math
 from ursina import Entity, Vec3, color, time, destroy, lerp
+from ursina.models.procedural.cone import Cone
 import config
 from items import ParticleBurst
+
+
+def _destroy_with_children(ent):
+    if not ent:
+        return
+    if hasattr(ent, 'children'):
+        for ch in list(ent.children):
+            _destroy_with_children(ch)
+    destroy(ent)
+
 
 class EnemySnake:
     def __init__(self, start_pos, start_rot_y=0.0, length=7, speed=config.ENEMY_DEFAULT_SPEED):
@@ -43,17 +54,38 @@ class EnemySnake:
         self.head = Entity(
             model='sphere',
             texture='textures/enemy_scales.png',
-            color=color.rgb32(255, 230, 230),
-            scale=(config.HEAD_RADIUS * 1.85, config.HEAD_RADIUS * 1.45, config.HEAD_RADIUS * 2.2),
+            color=color.rgb32(255, 225, 225),
+            scale=(config.HEAD_RADIUS * 1.9, config.HEAD_RADIUS * 1.48, config.HEAD_RADIUS * 2.28),
             position=start_pos,
             rotation=(0, start_rot_y, 0)
         )
-        # Evil Eyes
+        # Predatory Snout & Fangs
+        self.snout = Entity(
+            parent=self.head,
+            model='sphere',
+            texture='textures/enemy_scales.png',
+            color=color.rgb32(235, 195, 195),
+            scale=(0.66, 0.54, 0.62),
+            position=(0, -0.05, 0.34)
+        )
+        # Venom Fangs
+        Entity(parent=self.snout, model=Cone(resolution=6), color=color.rgb32(250, 245, 230), scale=(0.14, 0.38, 0.14), position=(-0.25, -0.22, 0.32), rotation=(165, 0, 0))
+        Entity(parent=self.snout, model=Cone(resolution=6), color=color.rgb32(250, 245, 230), scale=(0.14, 0.38, 0.14), position=(0.25, -0.22, 0.32), rotation=(165, 0, 0))
+
+        # Curved Dragon Horns
+        Entity(parent=self.head, model=Cone(resolution=8), color=color.rgb32(255, 165, 40), scale=(0.22, 0.68, 0.22), position=(-0.30, 0.42, -0.22), rotation=(-48, -18, -10))
+        Entity(parent=self.head, model=Cone(resolution=8), color=color.rgb32(255, 165, 40), scale=(0.22, 0.68, 0.22), position=(0.30, 0.42, -0.22), rotation=(-48, 18, 10))
+
+        # Aggressive Angled Brow Ridges
+        Entity(parent=self.head, model='cube', color=color.rgb32(120, 15, 20), scale=(0.24, 0.11, 0.36), position=(-0.33, 0.42, 0.24), rotation=(12, -14, -22))
+        Entity(parent=self.head, model='cube', color=color.rgb32(120, 15, 20), scale=(0.24, 0.11, 0.36), position=(0.33, 0.42, 0.24), rotation=(12, 14, 22))
+
+        # Evil Predator Eyes
         self.eye_l = Entity(parent=self.head, model='sphere', color=config.COLOR_ENEMY_EYES, scale=(0.28, 0.28, 0.28), position=(-0.35, 0.3, 0.25))
-        self.pupil_l = Entity(parent=self.eye_l, model='cube', color=config.COLOR_ENEMY_PUPILS, scale=(0.3, 0.7, 0.3), position=(0, 0, 0.35))
+        self.pupil_l = Entity(parent=self.eye_l, model='cube', color=config.COLOR_ENEMY_PUPILS, scale=(0.28, 0.75, 0.35), position=(0, 0, 0.36))
         
         self.eye_r = Entity(parent=self.head, model='sphere', color=config.COLOR_ENEMY_EYES, scale=(0.28, 0.28, 0.28), position=(0.35, 0.3, 0.25))
-        self.pupil_r = Entity(parent=self.eye_r, model='cube', color=config.COLOR_ENEMY_PUPILS, scale=(0.3, 0.7, 0.3), position=(0, 0, 0.35))
+        self.pupil_r = Entity(parent=self.eye_r, model='cube', color=config.COLOR_ENEMY_PUPILS, scale=(0.28, 0.75, 0.35), position=(0, 0, 0.36))
 
         # Shield Aura
         self.shield_aura = Entity(
@@ -97,6 +129,16 @@ class EnemySnake:
             position=init_pos,
             rotation=(0, init_rot_y, init_rot_z * 0.7)
         )
+        # Sharp dorsal dragon spike on enemy body segment
+        spike_col = color.rgb32(255, 145, 35) if idx % 2 == 0 else color.rgb32(195, 30, 35)
+        Entity(
+            parent=seg,
+            model=Cone(resolution=4),
+            color=spike_col,
+            scale=(0.24, 0.42, 0.34),
+            position=(0, 0.44, 0),
+            rotation=(-25, 0, 0)
+        )
         self.segments.append(seg)
 
     def grow(self, amount=1):
@@ -123,7 +165,7 @@ class EnemySnake:
         severed_positions = []
         for seg in severed:
             severed_positions.append(Vec3(seg.position))
-            destroy(seg)
+            _destroy_with_children(seg)
 
         self.update_segment_scales()
         return severed_positions
@@ -354,13 +396,10 @@ class EnemySnake:
 
     def destroy_entities(self):
         for seg in self.segments:
-            destroy(seg)
+            _destroy_with_children(seg)
         self.segments.clear()
         if self.head:
-            if hasattr(self.head, 'children'):
-                for child in list(self.head.children):
-                    destroy(child)
-            destroy(self.head)
+            _destroy_with_children(self.head)
             self.head = None
 
 

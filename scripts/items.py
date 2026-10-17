@@ -13,12 +13,20 @@ from ursina.models.procedural.cylinder import Cylinder
 from ursina.models.procedural.cone import Cone
 import config
 
+
+def _destroy_children_recursive(ent):
+    if hasattr(ent, 'children'):
+        for ch in list(ent.children):
+            _destroy_children_recursive(ch)
+            destroy(ch)
+
+
 class ParticleBurst:
     """Explosive spark particle effect upon picking up food or severing tail."""
     def __init__(self, position, tint_color, count=7):
         self.particles = []
         self.velocities = []
-        self.lifespan = 0.40
+        self.lifespan = 0.42
         self.timer = 0.0
         self.is_finished = False
 
@@ -28,13 +36,14 @@ class ParticleBurst:
                 color=tint_color,
                 unlit=True,
                 collider=None,
-                scale=random.uniform(0.12, 0.20),
-                position=position + Vec3(random.uniform(-0.15, 0.15), random.uniform(0.0, 0.15), random.uniform(-0.15, 0.15))
+                scale=random.uniform(0.13, 0.22),
+                position=position + Vec3(random.uniform(-0.15, 0.15), random.uniform(0.0, 0.15), random.uniform(-0.15, 0.15)),
+                rotation=(random.uniform(0, 90), random.uniform(0, 90), random.uniform(0, 90))
             )
             vel = Vec3(
-                random.uniform(-3.5, 3.5),
-                random.uniform(2.5, 6.0),
-                random.uniform(-3.5, 3.5)
+                random.uniform(-3.8, 3.8),
+                random.uniform(2.8, 6.4),
+                random.uniform(-3.8, 3.8)
             )
             self.particles.append(p)
             self.velocities.append(vel)
@@ -60,7 +69,7 @@ class ParticleBurst:
 
 
 class BaseItem(Entity):
-    """Base class for floating, spinning 3D collectible items."""
+    """Base class for floating, spinning 3D collectible items with glowing ground aura."""
     def __init__(self, item_type="apple", position=Vec3(0, 0.5, 0), item_color=color.white):
         super().__init__(position=position)
         self.item_type = item_type
@@ -73,11 +82,18 @@ class BaseItem(Entity):
         self.quota_value = 1
         self.food_name = "Їжа"
 
+        # Soft glowing ground ring beneath item for high visual visibility
+        self.ground_aura = Entity(
+            parent=self,
+            model=Cylinder(resolution=12),
+            color=color.rgba(item_color.r, item_color.g, item_color.b, 0.28),
+            scale=(1.05, 0.03, 1.05),
+            position=(0, -0.36, 0)
+        )
+
     def on_destroy(self):
         """Recursively destroy all child model components to eliminate entity/memory leaks."""
-        if hasattr(self, 'children'):
-            for child in list(self.children):
-                destroy(child)
+        _destroy_children_recursive(self)
 
     def update_animation(self, dt):
         """Floating hover and smooth rotation."""
@@ -97,9 +113,11 @@ class Apple(BaseItem):
         self.quota_value = 1
         self.food_name = "Яблуко"
         
-        self.body = Entity(parent=self, model='sphere', color=config.COLOR_APPLE_NORMAL, scale=(0.85, 0.85, 0.85))
-        self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(110, 60, 30), scale=(0.1, 0.35, 0.1), position=(0, 0.45, 0), rotation=(15, 0, 10))
-        self.leaf = Entity(parent=self, model='quad', color=color.rgb32(50, 200, 60), scale=(0.28, 0.16), position=(0.12, 0.55, 0), rotation=(0, 45, 30), double_sided=True)
+        self.body = Entity(parent=self, model='sphere', color=config.COLOR_APPLE_NORMAL, scale=(0.88, 0.84, 0.88))
+        # Glossy specular highlight
+        Entity(parent=self.body, model='sphere', color=color.rgba32(255, 220, 220, 210), scale=(0.26, 0.22, 0.26), position=(-0.24, 0.24, 0.30))
+        self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(110, 60, 30), scale=(0.1, 0.36, 0.1), position=(0, 0.44, 0), rotation=(15, 0, 10))
+        self.leaf = Entity(parent=self, model='sphere', color=color.rgb32(45, 210, 65), scale=(0.34, 0.08, 0.18), position=(0.16, 0.54, 0), rotation=(0, 35, 25))
 
 
 class Pear(BaseItem):
@@ -113,16 +131,17 @@ class Pear(BaseItem):
         self.food_name = "Соковита Груша"
         
         # Teardrop shape: bottom sphere + upper tapered sphere
-        self.body_bottom = Entity(parent=self, model='sphere', color=col, scale=(0.85, 0.8, 0.85), position=(0, 0, 0))
-        self.body_top = Entity(parent=self, model='sphere', color=color.rgb32(190, 225, 55), scale=(0.6, 0.65, 0.6), position=(0, 0.42, 0))
+        self.body_bottom = Entity(parent=self, model='sphere', color=col, scale=(0.86, 0.80, 0.86), position=(0, -0.02, 0))
+        self.body_top = Entity(parent=self, model='sphere', color=color.rgb32(195, 230, 60), scale=(0.60, 0.66, 0.60), position=(0, 0.40, 0))
+        Entity(parent=self.body_bottom, model='sphere', color=color.rgba32(245, 255, 190, 200), scale=(0.24, 0.24, 0.24), position=(-0.25, 0.20, 0.30))
         self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(95, 55, 25), scale=(0.08, 0.35, 0.08), position=(0, 0.72, 0), rotation=(12, 0, -10))
-        self.leaf = Entity(parent=self, model='quad', color=color.rgb32(40, 180, 50), scale=(0.26, 0.15), position=(0.1, 0.8, 0), rotation=(0, 30, 20), double_sided=True)
+        self.leaf = Entity(parent=self, model='sphere', color=color.rgb32(40, 190, 55), scale=(0.30, 0.08, 0.16), position=(0.14, 0.80, 0), rotation=(0, 30, 20))
 
 
 class Banana(BaseItem):
     """3. Ripe Banana: +20 Score, +1 Length, +1 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(250, 215, 30)
+        col = color.rgb32(255, 220, 35)
         super().__init__(item_type="banana", position=position, item_color=col)
         self.points = 20
         self.growth = 1
@@ -131,7 +150,7 @@ class Banana(BaseItem):
         
         # Curved 3-segment banana arc
         for dx, dy, rot_z in [(-0.32, 0.14, -28), (0, 0, 0), (0.32, 0.14, 28)]:
-            Entity(parent=self, model=Cylinder(resolution=8), color=col, scale=(0.26, 0.52, 0.26), position=(dx, dy, 0), rotation=(0, 0, rot_z))
+            Entity(parent=self, model=Cylinder(resolution=8), color=col, scale=(0.28, 0.54, 0.28), position=(dx, dy, 0), rotation=(0, 0, rot_z))
         # Brown banana tips
         Entity(parent=self, model='sphere', color=color.rgb32(90, 60, 20), scale=(0.18, 0.18, 0.18), position=(-0.46, 0.24, 0))
         Entity(parent=self, model='sphere', color=color.rgb32(120, 90, 30), scale=(0.16, 0.16, 0.16), position=(0.46, 0.24, 0))
@@ -140,100 +159,108 @@ class Banana(BaseItem):
 class Strawberry(BaseItem):
     """4. Sweet Strawberry: +25 Score, +1 Length, +2 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(235, 35, 55)
+        col = color.rgb32(240, 35, 60)
         super().__init__(item_type="strawberry", position=position, item_color=col)
         self.points = 25
         self.growth = 1
         self.quota_value = 2
         self.food_name = "Полуниця"
         
-        # Inverted cone berry body
-        self.cone = Entity(parent=self, model=Cone(resolution=10), color=col, scale=(0.85, 1.05, 0.85), position=(0, 0.1, 0), rotation=(180, 0, 0))
+        # Inverted cone berry body + rounded top shoulder
+        self.cone = Entity(parent=self, model=Cone(resolution=12), color=col, scale=(0.88, 1.05, 0.88), position=(0, 0.52, 0), rotation=(180, 0, 0))
+        # Golden seed specks
+        for i in range(6):
+            ang = math.radians(i * 60)
+            Entity(parent=self, model='sphere', color=color.rgb32(255, 225, 90), scale=(0.08, 0.10, 0.08), position=(math.sin(ang) * 0.30, 0.22, math.cos(ang) * 0.30))
         # Top green leaves / sepals
         for i in range(5):
             ang = i * 72
             rad = math.radians(ang)
-            Entity(parent=self, model='quad', color=color.rgb32(35, 185, 55), scale=(0.28, 0.14), position=(math.sin(rad) * 0.28, 0.62, math.cos(rad) * 0.28), rotation=(0, ang, 30), double_sided=True)
-        self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(30, 160, 45), scale=(0.08, 0.25, 0.08), position=(0, 0.72, 0))
+            Entity(parent=self, model='sphere', color=color.rgb32(35, 195, 55), scale=(0.32, 0.07, 0.16), position=(math.sin(rad) * 0.24, 0.56, math.cos(rad) * 0.24), rotation=(0, ang, 18))
+        self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(30, 160, 45), scale=(0.08, 0.25, 0.08), position=(0, 0.62, 0))
 
 
 class Orange(BaseItem):
     """5. Fresh Orange: +20 Score, +1 Length, +1 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(255, 130, 15)
+        col = color.rgb32(255, 135, 15)
         super().__init__(item_type="orange", position=position, item_color=col)
         self.points = 20
         self.growth = 1
         self.quota_value = 1
         self.food_name = "Апельсин"
         
-        self.body = Entity(parent=self, model='sphere', color=col, scale=(0.88, 0.82, 0.88))
-        self.leaf = Entity(parent=self, model='quad', color=color.rgb32(40, 175, 45), scale=(0.28, 0.16), position=(0.1, 0.48, 0), rotation=(0, 45, 20), double_sided=True)
+        self.body = Entity(parent=self, model='sphere', color=col, scale=(0.90, 0.84, 0.90))
+        Entity(parent=self.body, model='sphere', color=color.rgba32(255, 220, 140, 200), scale=(0.25, 0.22, 0.25), position=(-0.24, 0.24, 0.28))
+        self.leaf = Entity(parent=self, model='sphere', color=color.rgb32(40, 185, 45), scale=(0.32, 0.08, 0.16), position=(0.14, 0.48, 0), rotation=(0, 45, 20))
         self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(80, 50, 20), scale=(0.08, 0.22, 0.08), position=(0, 0.44, 0))
 
 
 class Watermelon(BaseItem):
     """6. Watermelon Slice: +30 Score, +2 Length, +2 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(240, 40, 65)
+        col = color.rgb32(245, 40, 68)
         super().__init__(item_type="watermelon", position=position, item_color=col)
         self.points = 30
         self.growth = 2
         self.quota_value = 2
         self.food_name = "Кавун"
         
-        # Outer Green Rind
-        self.rind = Entity(parent=self, model=Cylinder(resolution=14), color=color.rgb32(35, 145, 55), scale=(1.1, 0.24, 1.1), rotation=(90, 0, 0))
-        # Inner Red Juicy Core
-        self.pulp = Entity(parent=self, model=Cylinder(resolution=14), color=col, scale=(0.92, 0.26, 0.92), rotation=(90, 0, 0))
-        # Black Seed Spheres
-        for sx, sy in [(-0.25, 0.1), (0.25, 0.1), (0.0, -0.2)]:
-            Entity(parent=self, model='sphere', color=color.rgb32(20, 20, 25), scale=(0.1, 0.1, 0.1), position=(sx, sy, 0.14))
+        # Outer Green Rind + White Inner Rind + Red Juicy Core
+        self.rind = Entity(parent=self, model=Cylinder(resolution=14), color=color.rgb32(30, 155, 55), scale=(1.12, 0.22, 1.12), rotation=(90, 0, 0))
+        self.white_rind = Entity(parent=self, model=Cylinder(resolution=14), color=color.rgb32(230, 245, 220), scale=(1.00, 0.24, 1.00), rotation=(90, 0, 0))
+        self.pulp = Entity(parent=self, model=Cylinder(resolution=14), color=col, scale=(0.90, 0.26, 0.90), rotation=(90, 0, 0))
+        # Black Seed Spheres on both faces
+        for sx, sy in [(-0.24, 0.12), (0.24, 0.12), (0.0, -0.20)]:
+            Entity(parent=self, model='sphere', color=color.rgb32(20, 20, 25), scale=(0.10, 0.10, 0.30), position=(sx, sy, 0.0))
 
 
 class Cherries(BaseItem):
     """7. Twin Cherries: +35 Score, +2 Length, +2 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(215, 20, 45)
+        col = color.rgb32(220, 20, 48)
         super().__init__(item_type="cherries", position=position, item_color=col)
         self.points = 35
         self.growth = 2
         self.quota_value = 2
         self.food_name = "Стиглі Вишні"
         
-        # Left & Right Berry
-        self.berry_l = Entity(parent=self, model='sphere', color=col, scale=(0.55, 0.55, 0.55), position=(-0.25, -0.1, 0))
-        self.berry_r = Entity(parent=self, model='sphere', color=col, scale=(0.55, 0.55, 0.55), position=(0.25, -0.1, 0))
+        # Left & Right Berry with glossy highlights
+        self.berry_l = Entity(parent=self, model='sphere', color=col, scale=(0.56, 0.56, 0.56), position=(-0.26, -0.08, 0))
+        self.berry_r = Entity(parent=self, model='sphere', color=col, scale=(0.56, 0.56, 0.56), position=(0.26, -0.08, 0))
+        Entity(parent=self.berry_l, model='sphere', color=color.rgba32(255, 210, 220, 210), scale=(0.25, 0.25, 0.25), position=(-0.2, 0.24, 0.28))
+        Entity(parent=self.berry_r, model='sphere', color=color.rgba32(255, 210, 220, 210), scale=(0.25, 0.25, 0.25), position=(-0.2, 0.24, 0.28))
         # Arched Stems
-        self.stem_l = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(80, 150, 40), scale=(0.06, 0.65, 0.06), position=(-0.12, 0.25, 0), rotation=(0, 0, 22))
-        self.stem_r = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(80, 150, 40), scale=(0.06, 0.65, 0.06), position=(0.12, 0.25, 0), rotation=(0, 0, -22))
+        self.stem_l = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(80, 160, 40), scale=(0.06, 0.65, 0.06), position=(-0.12, 0.25, 0), rotation=(0, 0, 22))
+        self.stem_r = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(80, 160, 40), scale=(0.06, 0.65, 0.06), position=(0.12, 0.25, 0), rotation=(0, 0, -22))
         # Joint Leaf
-        self.leaf = Entity(parent=self, model='quad', color=color.rgb32(40, 185, 50), scale=(0.28, 0.16), position=(0, 0.55, 0), rotation=(0, 30, 15), double_sided=True)
+        self.leaf = Entity(parent=self, model='sphere', color=color.rgb32(40, 195, 50), scale=(0.32, 0.08, 0.16), position=(0, 0.56, 0), rotation=(0, 30, 15))
 
 
 class Pineapple(BaseItem):
     """8. Tropical Pineapple: +45 Score, +2 Length, +3 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(225, 155, 20)
+        col = color.rgb32(235, 165, 25)
         super().__init__(item_type="pineapple", position=position, item_color=col)
         self.points = 45
         self.growth = 2
         self.quota_value = 3
         self.food_name = "Ананас"
         
-        # Golden textured cylindrical body
-        self.body = Entity(parent=self, model=Cylinder(resolution=12), color=col, scale=(0.82, 1.15, 0.82), position=(0, 0.1, 0))
+        # Golden textured oval body + diamond ring bands
+        self.body = Entity(parent=self, model='sphere', color=col, scale=(0.86, 1.18, 0.86), position=(0, 0.08, 0))
+        Entity(parent=self, model='cube', color=color.rgb32(205, 125, 15), scale=(0.68, 0.68, 0.68), position=(0, 0.08, 0), rotation=(45, 45, 45))
         # Green spiky leaf crown
         for i in range(6):
             ang = i * 60
             rad = math.radians(ang)
-            Entity(parent=self, model=Cone(resolution=4), color=color.rgb32(35, 175, 50), scale=(0.24, 0.65, 0.24), position=(math.sin(rad) * 0.22, 0.85, math.cos(rad) * 0.22), rotation=(-25, ang, 0))
+            Entity(parent=self, model=Cone(resolution=4), color=color.rgb32(35, 185, 50), scale=(0.25, 0.68, 0.25), position=(math.sin(rad) * 0.20, 0.82, math.cos(rad) * 0.20), rotation=(-25, ang, 0))
 
 
 class Starfruit(BaseItem):
     """9. Golden Starfruit: +50 Score, +2 Length, +4 Quota."""
     def __init__(self, position=Vec3(0, 0.5, 0)):
-        col = color.rgb32(255, 225, 40)
+        col = color.rgb32(255, 230, 45)
         super().__init__(item_type="starfruit", position=position, item_color=col)
         self.points = 50
         self.growth = 2
@@ -241,13 +268,13 @@ class Starfruit(BaseItem):
         self.food_name = "Зоряний Фрукт"
         
         # Central glowing star node
-        self.core = Entity(parent=self, model='cube', color=col, scale=(0.55, 0.55, 0.55), rotation=(45, 45, 45))
+        self.core = Entity(parent=self, model='cube', color=col, scale=(0.58, 0.58, 0.58), rotation=(45, 45, 45))
         for i in range(5):
             ang = i * 72
             rad = math.radians(ang)
-            Entity(parent=self, model=Cone(resolution=4), color=color.rgb32(255, 240, 80), scale=(0.3, 0.65, 0.3), position=(math.sin(rad) * 0.35, 0, math.cos(rad) * 0.35), rotation=(0, 0, -ang + 90))
+            Entity(parent=self, model=Cone(resolution=4), color=color.rgb32(255, 245, 90), scale=(0.32, 0.68, 0.32), position=(math.sin(rad) * 0.35, 0, math.cos(rad) * 0.35), rotation=(0, 0, -ang + 90))
         # Sparkling halo ring
-        self.halo = Entity(parent=self, model='cube', color=color.rgba32(255, 255, 160, 180), scale=(1.25, 0.06, 1.25), rotation=(30, 0, 30))
+        self.halo = Entity(parent=self, model='cube', color=color.rgba32(255, 255, 160, 185), scale=(1.28, 0.06, 1.28), rotation=(30, 0, 30))
 
     def update_animation(self, dt):
         super().update_animation(dt)
@@ -264,13 +291,17 @@ class GoldenApple(BaseItem):
         self.quota_value = 5
         self.food_name = "Золоте Яблуко"
         
-        self.body = Entity(parent=self, model='sphere', color=config.COLOR_APPLE_GOLDEN, scale=(1.05, 1.05, 1.05))
+        self.body = Entity(parent=self, model='sphere', color=config.COLOR_APPLE_GOLDEN, scale=(1.06, 1.02, 1.06))
+        Entity(parent=self.body, model='sphere', color=color.white, scale=(0.26, 0.24, 0.26), position=(-0.25, 0.25, 0.30))
         self.stem = Entity(parent=self, model=Cylinder(resolution=6), color=color.rgb32(150, 100, 20), scale=(0.12, 0.42, 0.12), position=(0, 0.55, 0))
-        self.halo = Entity(parent=self, model='cube', color=color.rgba32(255, 255, 180, 180), scale=(1.35, 0.08, 1.35), rotation=(35, 0, 35))
+        self.leaf = Entity(parent=self, model='sphere', color=color.rgb32(255, 245, 130), scale=(0.34, 0.08, 0.18), position=(0.18, 0.62, 0), rotation=(0, 35, 22))
+        self.halo = Entity(parent=self, model='cube', color=color.rgba32(255, 255, 180, 185), scale=(1.38, 0.07, 1.38), rotation=(35, 0, 35))
+        self.halo2 = Entity(parent=self, model='cube', color=color.rgba32(255, 215, 60, 160), scale=(1.22, 0.06, 1.22), rotation=(-35, 45, -35))
 
     def update_animation(self, dt):
         super().update_animation(dt)
         self.halo.rotation_y += dt * 160.0
+        self.halo2.rotation_y -= dt * 140.0
 
 
 # ================= POWER-UP ITEMS =================
@@ -278,12 +309,12 @@ class GoldenApple(BaseItem):
 class PowerupItem(BaseItem):
     """
     Power-up Items:
-    - 'speed': +25% Speed Boost for 10s (Orange Diamond)
-    - 'slow': -25% Slow Motion for 10s (Ice Cyan Snowflake)
-    - 'magnet': Food Magnet for 10s (Purple Horseshoe Ring)
-    - 'shield': Invincible Shield for 12s (Cyan Shield Orb)
-    - 'life': +1 Life Heart / 1-Up (Crimson Heart)
-    - 'mega_food': +10 Food Feast (+100 Score, +10 Apples, +3 Length) (Golden Watermelon)
+    - 'speed': +25% Speed Boost for 10s (Orange Diamond Lightning Core)
+    - 'slow': -25% Slow Motion for 10s (Ice Cyan Snowflake Crystal)
+    - 'magnet': Food Magnet for 10s (Purple Magnetic Field Gyroscope)
+    - 'shield': Invincible Shield for 12s (Cyan Shield Energy Orb)
+    - 'life': +1 Life Heart / 1-Up (Crimson 3D Heart)
+    - 'mega_food': +10 Food Feast (+100 Score, +10 Apples, +3 Length) (Golden Crown Watermelon)
     """
     def __init__(self, item_type="speed", position=Vec3(0, 0.5, 0)):
         col_map = {
@@ -303,47 +334,51 @@ class PowerupItem(BaseItem):
 
         if item_type == "speed":
             self.food_name = "Турбо-Прискорення"
-            self.mesh_obj = Entity(parent=self, model='cube', color=col, scale=(0.7, 0.95, 0.7), rotation=(45, 45, 45))
-            Entity(parent=self.mesh_obj, model='cube', color=color.rgb32(255, 240, 80), scale=(0.3, 0.7, 0.1), position=(-0.45, 0, 0))
-            Entity(parent=self.mesh_obj, model='cube', color=color.rgb32(255, 240, 80), scale=(0.3, 0.7, 0.1), position=(0.45, 0, 0))
+            self.mesh_obj = Entity(parent=self, model='cube', color=col, scale=(0.72, 0.96, 0.72), rotation=(45, 45, 45))
+            Entity(parent=self.mesh_obj, model='cube', color=color.rgb32(255, 245, 90), scale=(0.32, 0.75, 0.12), position=(-0.45, 0, 0))
+            Entity(parent=self.mesh_obj, model='cube', color=color.rgb32(255, 245, 90), scale=(0.32, 0.75, 0.12), position=(0.45, 0, 0))
+            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgba32(255, 210, 60, 180), scale=(1.2, 0.06, 1.2), rotation=(25, 0, -25))
 
         elif item_type == "slow":
             self.food_name = "Сповільнення Часу"
-            self.mesh_obj = Entity(parent=self, model='cube', color=col, scale=(0.65, 0.65, 0.65), rotation=(45, 45, 45))
-            Entity(parent=self, model='cube', color=color.rgb32(220, 255, 255), scale=(1.2, 0.18, 0.18), rotation=(0, 45, 0))
-            Entity(parent=self, model='cube', color=color.rgb32(220, 255, 255), scale=(0.18, 1.2, 0.18), rotation=(0, 45, 0))
+            self.mesh_obj = Entity(parent=self, model='cube', texture='textures/crystal_facet.png', color=col, scale=(0.68, 0.68, 0.68), rotation=(45, 45, 45))
+            Entity(parent=self, model='cube', color=color.rgb32(220, 255, 255), scale=(1.22, 0.18, 0.18), rotation=(0, 45, 0))
+            Entity(parent=self, model='cube', color=color.rgb32(220, 255, 255), scale=(0.18, 1.22, 0.18), rotation=(0, 45, 0))
+            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgba32(150, 240, 255, 180), scale=(1.18, 0.06, 1.18), rotation=(-25, 0, 25))
 
         elif item_type == "magnet":
             self.food_name = "Магніт для Їжі"
-            self.mesh_obj = Entity(parent=self, model='sphere', color=col, scale=(0.75, 0.75, 0.75))
-            Entity(parent=self, model=Cylinder(resolution=14), color=color.rgb32(255, 255, 255), scale=(0.95, 0.14, 0.95))
+            self.mesh_obj = Entity(parent=self, model='sphere', color=col, scale=(0.78, 0.78, 0.78))
+            Entity(parent=self, model=Cylinder(resolution=14), color=color.rgb32(255, 255, 255), scale=(0.98, 0.14, 0.98))
+            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgba32(235, 130, 255, 190), scale=(1.24, 0.07, 1.24), rotation=(35, 0, 35))
 
         elif item_type == "shield":
             self.food_name = "Захисний Щит"
-            self.mesh_obj = Entity(parent=self, model='sphere', color=color.rgba32(0, 220, 255, 210), scale=(0.85, 0.85, 0.85))
-            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgb32(255, 255, 255), scale=(1.15, 0.08, 1.15), rotation=(25, 0, 25))
+            self.mesh_obj = Entity(parent=self, model='sphere', color=color.rgba32(0, 225, 255, 215), scale=(0.88, 0.88, 0.88))
+            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgb32(255, 255, 255), scale=(1.20, 0.08, 1.20), rotation=(25, 0, 25))
 
         elif item_type == "life":
             self.food_name = "+1 Життя"
-            self.mesh_obj = Entity(parent=self, model='sphere', color=col, scale=(0.85, 0.85, 0.85))
-            Entity(parent=self.mesh_obj, model='sphere', color=color.rgb32(255, 75, 110), scale=(0.6, 0.6, 0.6), position=(-0.25, 0.25, 0))
-            Entity(parent=self.mesh_obj, model='sphere', color=color.rgb32(255, 75, 110), scale=(0.6, 0.6, 0.6), position=(0.25, 0.25, 0))
-            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgb32(255, 220, 150), scale=(1.2, 0.07, 1.2), rotation=(35, 0, 35))
+            self.mesh_obj = Entity(parent=self, model='sphere', color=col, scale=(0.86, 0.86, 0.86))
+            Entity(parent=self.mesh_obj, model='sphere', color=color.rgb32(255, 75, 110), scale=(0.62, 0.62, 0.62), position=(-0.26, 0.26, 0))
+            Entity(parent=self.mesh_obj, model='sphere', color=color.rgb32(255, 75, 110), scale=(0.62, 0.62, 0.62), position=(0.26, 0.26, 0))
+            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgb32(255, 220, 150), scale=(1.22, 0.07, 1.22), rotation=(35, 0, 35))
 
         elif item_type == "mega_food":
             self.food_name = "Мега-Кавун (+10 Їжі)"
             self.points = 100
             self.growth = 3
             self.quota_value = 10
-            self.mesh_obj = Entity(parent=self, model='sphere', color=col, scale=(1.1, 1.1, 1.1))
-            Entity(parent=self.mesh_obj, model=Cylinder(resolution=12), color=color.rgb32(40, 180, 50), scale=(1.03, 0.2, 1.03), position=(0, 0, 0))
-            Entity(parent=self.mesh_obj, model=Cylinder(resolution=12), color=color.rgb32(40, 180, 50), scale=(0.8, 0.18, 0.8), position=(0, 0.35, 0))
-            self.star_node = Entity(parent=self, model='cube', color=color.rgb32(255, 255, 100), scale=(0.4, 0.4, 0.4), position=(0, 0.65, 0), rotation=(45, 45, 45))
+            self.mesh_obj = Entity(parent=self, model='sphere', color=col, scale=(1.12, 1.12, 1.12))
+            Entity(parent=self.mesh_obj, model=Cylinder(resolution=12), color=color.rgb32(40, 185, 50), scale=(1.04, 0.2, 1.04), position=(0, 0, 0))
+            Entity(parent=self.mesh_obj, model=Cylinder(resolution=12), color=color.rgb32(40, 185, 50), scale=(0.82, 0.18, 0.82), position=(0, 0.35, 0))
+            self.star_node = Entity(parent=self, model='cube', color=color.rgb32(255, 255, 100), scale=(0.42, 0.42, 0.42), position=(0, 0.68, 0), rotation=(45, 45, 45))
+            self.orbit_ring = Entity(parent=self, model='cube', color=color.rgba32(255, 235, 90, 190), scale=(1.42, 0.07, 1.42), rotation=(28, 0, 28))
 
     def update_animation(self, dt):
         super().update_animation(dt)
         if hasattr(self, 'orbit_ring') and self.orbit_ring:
-            self.orbit_ring.rotation_y += dt * 140.0
+            self.orbit_ring.rotation_y += dt * 150.0
         if hasattr(self, 'star_node') and self.star_node:
             self.star_node.rotation_y += dt * 180.0
 
